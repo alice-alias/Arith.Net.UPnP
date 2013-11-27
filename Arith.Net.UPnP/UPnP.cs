@@ -217,6 +217,7 @@ ST: " + values.St + "\r\n\r\n");
         protected void Dispose(Boolean disposing)
         {
             if (IsDisposed) return;
+            IsDisposed = true;
 
             if (disposing)
             {
