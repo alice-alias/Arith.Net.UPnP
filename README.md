@@ -1,6 +1,10 @@
 ﻿# Arith.Net.UPnP
 
-UPnP を使って、ポートマッピングしたりできます。
+.NET で、 UPnP を使ったポートマッピングができます。
+
+## 動作環境
+
+* .NET Framework 4.0 Client Profile 以上
 
 ## 使い方
 
