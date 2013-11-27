@@ -23,21 +23,14 @@ HOST: " + values.Host.ToString() + @"
 MAN: """ + values.Man + @"""
 ST: " + values.St + "\r\n\r\n");
 
-            var udpClient = new UdpClient(udpPort, values.Host.AddressFamily);
-
             string res;
 
-            try
-            {
+            using (var udpClient = new UdpClient(udpPort, values.Host.AddressFamily)) {
                 udpClient.JoinMulticastGroup(values.Host.Address);
                 udpClient.Send(data, data.Length, values.Host);
 
                 var dmyAddr = new IPEndPoint(IPAddress.Any, 0);
                 res = Encoding.UTF8.GetString(udpClient.Receive(ref dmyAddr));
-            }
-            finally
-            {
-                udpClient.Close();
             }
 
             var loc = res.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').FirstOrDefault(x => x.Length > 10 && x.Substring(0, 10).ToLower() == "location: ").Substring(10);
