@@ -14,21 +14,22 @@ namespace Arith.Net
     public static class UPnP
     {
 
-        public static Uri SsdpMSearch(int udpPort, MSearchValue values)
+        public static Uri SsdpMSearch(IPEndPoint Host, string Man, string St, int Mx)
         {
             var data = Encoding.UTF8.GetBytes(
-@"M-SEARCH * HTTP/1.1
-MX: " + values.Mx.ToString() + @"
-HOST: " + values.Host.ToString() + @"
-MAN: """ + values.Man + @"""
-ST: " + values.St + "\r\n\r\n");
+                @"M-SEARCH * HTTP/1.1
+MX: " + Mx.ToString() + @"
+HOST: " + Host.ToString() + @"
+MAN: """ + Man + @"""
+ST: " + St + "\r\n\r\n");
 
             string res;
 
-            using (var udpClient = new UdpClient(udpPort, values.Host.AddressFamily)) {
-                udpClient.JoinMulticastGroup(values.Host.Address);
-                udpClient.Send(data, data.Length, values.Host);
-
+            using (var udpClient = new UdpClient(Host.AddressFamily))
+            {
+                udpClient.JoinMulticastGroup(Host.Address);
+                udpClient.Send(data, data.Length, Host);
+                
                 var dmyAddr = new IPEndPoint(IPAddress.Any, 0);
                 res = Encoding.UTF8.GetString(udpClient.Receive(ref dmyAddr));
             }
@@ -37,6 +38,12 @@ ST: " + values.St + "\r\n\r\n");
 
             if (loc != null) return new Uri(loc);
             throw new Exception("レスポンスに Location がありませんでした。");
+        }
+
+        [Obsolete()]
+        public static Uri SsdpMSearch(int udpPort, MSearchValue values)
+        {
+            return SsdpMSearch(values.Host, values.Man, values.St, values.Mx);
         }
         
         public static Uri GetUPnPControlUri(Uri location, Uri serviceUrn)
