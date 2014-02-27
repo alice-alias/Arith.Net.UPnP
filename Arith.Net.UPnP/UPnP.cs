@@ -34,7 +34,7 @@ ST: " + St + "\r\n\r\n");
                 res = Encoding.UTF8.GetString(udpClient.Receive(ref dmyAddr));
             }
 
-            var loc = res.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').FirstOrDefault(x => x.Length > 10 && x.Substring(0, 10).ToLower() == "location: ").Substring(10);
+            var loc = res.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').FirstOrDefault(x => x.Length > 9 && x.Substring(0, 9).ToLower() == "location:").Substring(9).Trim(' ');
 
             if (loc != null) return new Uri(loc);
             throw new Exception("レスポンスに Location がありませんでした。");
@@ -138,7 +138,7 @@ ST: " + St + "\r\n\r\n");
         public int ExternalPort { get; private set; }
         public IPAddress InternalClientAddress { get; private set; }
 
-        Uri location, ctrlUri, service;
+        Uri ctrlUri, service;
 
         public static PortMapper Map(string protocol, int port)
         {
@@ -173,26 +173,32 @@ ST: " + St + "\r\n\r\n");
 
         public static PortMapper Map(string protocol, int internalPort, int externalPort, IPAddress clientAddress)
         {
+
+            var location = UPnP.SsdpMSearch(
+                new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900),
+                "ssdp:discover",
+                "upnp:rootdevice",
+                3);
+
+            var ctrlUris = UPnP.GetUPnPControlUris(location, new[] { new Uri("urn:schemas-upnp-org:service:WANPPPConnection:1"), new Uri("urn:schemas-upnp-org:service:WANIPConnection:1") });
+
+            return Map(protocol, internalPort, externalPort, clientAddress, ctrlUris.First().Key, ctrlUris.First().Value);
+        }
+
+        public static PortMapper Map(string protocol, int internalPort, int externalPort,
+            IPAddress clientAddress, Uri service, Uri location)
+        {
+
             var mapper = new PortMapper()
             {
                 Protocol = protocol,
                 InternalPort = internalPort,
                 ExternalPort = externalPort,
-                InternalClientAddress = clientAddress
+                InternalClientAddress = clientAddress,
+                
+                service = service,
+                ctrlUri = location,
             };
-            
-            mapper.location = UPnP.SsdpMSearch(internalPort, new MSearchValue()
-            {
-                Mx = 3,
-                Host = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900),
-                Man = "ssdp:discover",
-                St = "upnp:rootdevice"
-            });
-
-
-            var ctrlUris = UPnP.GetUPnPControlUris(mapper.location, new[] { new Uri("urn:schemas-upnp-org:service:WANPPPConnection:1"), new Uri("urn:schemas-upnp-org:service:WANIPConnection:1") });
-            mapper.ctrlUri = ctrlUris.First().Value;
-            mapper.service = ctrlUris.First().Key;
 
             UPnP.PostSoap(mapper.ctrlUri, mapper.service, "AddPortMapping", new Dictionary<string, object>
             {
@@ -253,7 +259,14 @@ ST: " + St + "\r\n\r\n");
 
         ~PortMapper()
         {
-            Dispose(false);
+            try
+            {
+                Dispose(false);
+            }
+            catch (WebException)
+            {
+                
+            }
         }
     }
 
