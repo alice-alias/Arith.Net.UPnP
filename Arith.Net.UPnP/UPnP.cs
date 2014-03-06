@@ -21,6 +21,11 @@ namespace Arith.Net
             return finder.FindByType(typeUri.ToString(), 0).Cast<UPnPDevice>().ToArray();
         }
 
+        public static object[] InvokeAction(this UPnPService service, string actionName)
+        {
+            return service.InvokeAction(actionName, new object[0]);
+        }
+
         public static object[] InvokeAction(this UPnPService service, string actionName, object[] actionArgs)
         {
             object obj = new object();
