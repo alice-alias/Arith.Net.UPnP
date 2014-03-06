@@ -7,125 +7,79 @@ using System.Net;
 using System.Net.Sockets;
 
 using System.Xml.Linq;
-
+using UPNPLib;
 
 namespace Arith.Net
 {
     public static class UPnP
     {
+        static UPnPDeviceFinder finder;
+        static UPnPDeviceFinder Finder { get { return finder = finder ?? new UPnPDeviceFinder(); } }
 
+        private static UPnPDevice[] GetDevices(UPnPDeviceFinder finder, Uri typeUri)
+        {
+            return finder.FindByType(typeUri.ToString(), 0).Cast<UPnPDevice>().ToArray();
+        }
+
+        public static object[] InvokeAction(this UPnPService service, string actionName, object[] actionArgs)
+        {
+            object obj = new object();
+            service.InvokeAction(actionName, actionArgs, ref obj);
+            return (object[])obj;
+        }
+
+        private static UPnPDevice GetDevice(UPnPDeviceFinder finder, Uri udn)
+        {
+            return finder.FindByUDN(udn.ToString());
+        }
+
+        public static UPnPDevice[] GetDevices(Uri typeUri)
+        {
+            return GetDevices(Finder, typeUri);
+        }
+
+        public static Uri[] GetDeviceUDNs(Uri typeUri)
+        {
+            return GetDevices(typeUri).Select(x => new Uri(x.UniqueDeviceName)).ToArray();
+        }
+
+        public static UPnPDevice GetDevice(Uri udn)
+        {
+            return GetDevice(Finder, udn);
+        }
+
+        public static IDictionary<Uri, UPnPService> GetServices(this UPnPDevice device)
+        {
+            return device.Services.Cast<UPnPService>().ToDictionary(x => new Uri(x.Id), y => device.Services[y.Id]);
+        }
+
+        public static UPnPService GetService(this UPnPDevice device, Uri serviceId)
+        {
+            return device.GetServices()[serviceId];
+        }
+
+        [Obsolete("GetDeviceUDNs(Uri) を使用してください。", true)]
         public static Uri SsdpMSearch(IPEndPoint Host, string Man, string St, int Mx)
         {
-            var data = Encoding.UTF8.GetBytes(
-                @"M-SEARCH * HTTP/1.1
-MX: " + Mx.ToString() + @"
-HOST: " + Host.ToString() + @"
-MAN: """ + Man + @"""
-ST: " + St + "\r\n\r\n");
-
-            string res;
-
-            using (var udpClient = new UdpClient(Host.AddressFamily))
-            {
-                udpClient.JoinMulticastGroup(Host.Address);
-                udpClient.Send(data, data.Length, Host);
-                
-                var dmyAddr = new IPEndPoint(IPAddress.Any, 0);
-                res = Encoding.UTF8.GetString(udpClient.Receive(ref dmyAddr));
-            }
-
-            var loc = res.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').FirstOrDefault(x => x.Length > 9 && x.Substring(0, 9).ToLower() == "location:").Substring(9).Trim(' ');
-
-            if (loc != null) return new Uri(loc);
-            throw new Exception("レスポンスに Location がありませんでした。");
+            throw new NotImplementedException();
         }
 
-        [Obsolete()]
+        [Obsolete("GetDeviceUDNs(Uri) を使用してください。", true)]
         public static Uri SsdpMSearch(int udpPort, MSearchValue values)
         {
-            return SsdpMSearch(values.Host, values.Man, values.St, values.Mx);
+            throw new NotImplementedException();
         }
-        
+
+        [Obsolete("GetDeviceUDNs(Uri) を使用してください。", true)]
         public static Uri GetUPnPControlUri(Uri location, Uri serviceUrn)
         {
-            return GetUPnPControlUris(location, new[] { serviceUrn }).FirstOrDefault().Value;
+            throw new NotImplementedException();
         }
 
+        [Obsolete("GetDeviceUDNs(Uri) を使用してください。", true)]
         public static KeyValuePair<Uri, Uri>[] GetUPnPControlUris(Uri location, Uri[] serviceUrns)
         {
-            var req = (HttpWebRequest)HttpWebRequest.Create(location);
-            req.KeepAlive = false;
-            var res = req.GetResponse();
-
-            XDocument resDoc;
-            using (var stream = res.GetResponseStream())
-                resDoc = XDocument.Load(stream);
-
-            var ns = XNamespace.Get("urn:schemas-upnp-org:device-1-0");
-
-            return resDoc.Root.Descendants(ns + "device")
-                .SelectMany(x => x.Element(ns + "serviceList").Elements(ns + "service"))
-                .Where(x => serviceUrns.Any(y => y.ToString() == x.Element(ns + "serviceType").Value))
-                .Select(x => {
-                    Uri ctrluri;
-                    try
-                    {
-                        ctrluri = new Uri(x.Element(ns + "controlURL").Value);
-                    }
-                    catch (UriFormatException)
-                    {
-                        ctrluri = new Uri(location.Scheme + "://" + location.Host + ":" + location.Port + x.Element(ns + "controlURL").Value);
-                    }
-
-                    return new KeyValuePair<Uri, Uri>(serviceUrns.First(y => y.ToString() == x.Element(ns + "serviceType").Value), ctrluri);
-                }).ToArray();
-        }
-
-        public static KeyValuePair<string, string>[] PostSoap(Uri controlUrl, Uri ServiceType, string action, IDictionary<string, object> values = null) {
-
-            if (values == null) values = new Dictionary<string, object>();
-
-            var reqBody = XDocument.Parse(
-@"<?xml version=""1.0""?>
-<SOAP-ENV:Envelope xmlns:SOAP-ENV=""http://schemas.xmlsoap.org/soap/envelope/"" SOAP-ENV:encodingStyle=""http://schemas.xmlsoap.org/soap/encoding/"">
-  <SOAP-ENV:Body>
-    <m:" + action + @" xmlns:m=""" + ServiceType + @""">
-    </m:" + action + @">
-  </SOAP-ENV:Body>
-</SOAP-ENV:Envelope>");
-
-            reqBody.Root.Descendants("{" + ServiceType + "}" + action).First().Add(values.Select(x => new XElement(x.Key, x.Value)).ToArray());
-
-            var req = (HttpWebRequest)HttpWebRequest.Create(controlUrl);
-            req.Method = "POST"; 
-            req.ContentType = "text/xml; charset=\"utf-8\"";
-            req.KeepAlive = false;
-            req.Headers.Add("SOAPACTION: \"" + ServiceType + "#" + action + "\"");
-
-            using (var stream = req.GetRequestStream())
-                reqBody.Save(stream);
-
-            WebResponse res;
-
-            try
-            {
-                res = req.GetResponse();
-                
-                XDocument resDoc;
-                using (var stream = res.GetResponseStream())
-                    resDoc = XDocument.Load(stream);
-
-                return resDoc.Descendants("{" + ServiceType + "}" + action + "Response").Elements().Select(x => new KeyValuePair<string, string>(x.Name.LocalName, x.Value)).ToArray();
-            }
-            catch(WebException e)
-            {
-                if (e.Response == null) throw e;
-                using (var stream = e.Response.GetResponseStream())
-                {
-                    var errdoc = XDocument.Load(stream);
-                    throw new WebException(errdoc.Root.Descendants("errorDescription").First().Value, e);
-                }
-            }
+            throw new NotImplementedException();
         }
     }
 
@@ -137,19 +91,37 @@ ST: " + St + "\r\n\r\n");
         public int InternalPort { get; private set; }
         public int ExternalPort { get; private set; }
         public IPAddress InternalClientAddress { get; private set; }
+        
+        UPnPService service;
 
-        Uri ctrlUri, service;
+        public static PortMapper Map(string protocol, ushort port)
+        {
+            return Map(protocol, port, port, GetHostAddress());
+        }
 
+        [Obsolete]
         public static PortMapper Map(string protocol, int port)
         {
             return Map(protocol, port, port, GetHostAddress());
         }
 
+        public static PortMapper Map(string protocol, ushort internalPort, ushort externalPort)
+        {
+            return Map(protocol, internalPort, externalPort, GetHostAddress());
+        }
+
+        [Obsolete]
         public static PortMapper Map(string protocol, int internalPort, int externalPort)
         {
             return Map(protocol, internalPort, externalPort, GetHostAddress());
         }
 
+        public static PortMapper Map(string protocol, ushort port, IPAddress clientAddress)
+        {
+            return Map(protocol, port, port, clientAddress);
+        }
+
+        [Obsolete]
         public static PortMapper Map(string protocol, int port, IPAddress clientAddress)
         {
             return Map(protocol, port, port, clientAddress);
@@ -171,23 +143,26 @@ ST: " + St + "\r\n\r\n");
         }
 
 
-        public static PortMapper Map(string protocol, int internalPort, int externalPort, IPAddress clientAddress)
+        public static PortMapper Map(string protocol, ushort internalPort, ushort externalPort, IPAddress clientAddress)
         {
-
-            var location = UPnP.SsdpMSearch(
-                new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900),
-                "ssdp:discover",
-                "upnp:rootdevice",
-                3);
-
-            var ctrlUris = UPnP.GetUPnPControlUris(location, new[] { new Uri("urn:schemas-upnp-org:service:WANPPPConnection:1"), new Uri("urn:schemas-upnp-org:service:WANIPConnection:1") });
-
-            return Map(protocol, internalPort, externalPort, clientAddress, ctrlUris.First().Key, ctrlUris.First().Value);
+            return Map(protocol, internalPort, externalPort, clientAddress);
         }
 
-        public static PortMapper Map(string protocol, int internalPort, int externalPort,
-            IPAddress clientAddress, Uri service, Uri location)
+        public static PortMapper Map(string protocol, ushort internalPort, ushort externalPort, IPAddress clientAddress, string description)
         {
+            var devices = 
+                UPnP.GetDevices(new Uri("urn:schemas-upnp-org:service:WANPPPConnection:1")).Union(
+                UPnP.GetDevices(new Uri("urn:schemas-upnp-org:service:WANIPConnection:1")));
+
+            return Map(new Uri(devices.FirstOrDefault().UniqueDeviceName), protocol, internalPort, externalPort, clientAddress, description);
+        }
+
+        public static PortMapper Map(Uri deviceUDN, string protocol, ushort internalPort, ushort externalPort, IPAddress clientAddress, string description)
+        {
+            var device = UPnP.GetDevice(deviceUDN);
+            var service = device.Services["urn:upnp-org:serviceId:WANPPPConn1"];
+            if (service == null)
+                service = device.Services["urn:upnp-org:serviceId:WANIPConn1"];
 
             var mapper = new PortMapper()
             {
@@ -195,24 +170,34 @@ ST: " + St + "\r\n\r\n");
                 InternalPort = internalPort,
                 ExternalPort = externalPort,
                 InternalClientAddress = clientAddress,
-                
+
                 service = service,
-                ctrlUri = location,
             };
 
-            UPnP.PostSoap(mapper.ctrlUri, mapper.service, "AddPortMapping", new Dictionary<string, object>
-            {
-                { "NewRemoteHost", ""},
-                { "NewExternalPort", mapper.ExternalPort}, 
-                { "NewProtocol", mapper.Protocol}, 
-                { "NewInternalPort", mapper.InternalPort}, 
-                { "NewInternalClient", mapper.InternalClientAddress.ToString()}, 
-                { "NewEnabled", 1}, 
-                { "NewPortMappingDescription", "Hello World!!"}, 
-                { "NewLeaseDuration", 0}, 
-            });
+            service.InvokeAction(
+                "AddPortMapping",
+                new object[] { "", externalPort, protocol, internalPort, clientAddress, true, "", 0 });
 
             return mapper;
+        }
+
+        [Obsolete]
+        public static PortMapper Map(string protocol, int internalPort, int externalPort, IPAddress clientAddress)
+        {
+            return Map(protocol, (ushort)internalPort, (ushort)externalPort, clientAddress);
+        }
+
+        [Obsolete]
+        public static PortMapper Map(string protocol, int internalPort, int externalPort,
+            IPAddress clientAddress, Uri service, Uri location) {
+                return Map(protocol, (ushort)internalPort, (ushort)externalPort, clientAddress, service, location);
+        }
+
+        [Obsolete("Map(Uri, string, ushort, ushort, IPAddress) を使用してください。", true)]
+        public static PortMapper Map(string protocol, ushort internalPort, ushort externalPort,
+            IPAddress clientAddress, Uri service, Uri location)
+        {
+            throw new NotImplementedException();
         }
 
         private PortMapper() { }
@@ -223,8 +208,8 @@ ST: " + St + "\r\n\r\n");
         {
             if (IsDisposed) throw new ObjectDisposedException(this.GetType().Name);
 
-            var res = UPnP.PostSoap(ctrlUri, service, "GetExternalIPAddress");
-            return IPAddress.Parse(res.First(x => x.Key == "NewExternalIPAddress").Value);
+            var res = service.InvokeAction("GetExternalIPAddress", new object[0]);
+            return IPAddress.Parse((string)res[0]);
         }
 
         protected void Dispose(Boolean disposing)
@@ -238,12 +223,7 @@ ST: " + St + "\r\n\r\n");
             }
 
             //  ポートマッピング削除
-            UPnP.PostSoap(ctrlUri, service, "DeletePortMapping", new Dictionary<string, object>
-                {
-                    {"NewRemoteHost", ""},
-                    {"NewExternalPort", ExternalPort},
-                    {"NewProtocol", Protocol},
-                });
+            service.InvokeAction("DeletePortMapping", new object[] { "", ExternalPort, Protocol });
         }
 
         public void Delete()
@@ -270,16 +250,12 @@ ST: " + St + "\r\n\r\n");
         }
     }
 
+    [Obsolete("", true)]
     public class MSearchValue
     {
-        public int Mx { get; set; }
-        public IPEndPoint Host { get; set; }
-        public string Man { get; set; }
-        public string St { get; set; }
-
         public MSearchValue()
         {
-            Host = new IPEndPoint(IPAddress.Any, 0);
+            throw new NotImplementedException();
         }
     }
 }
