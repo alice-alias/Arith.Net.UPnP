@@ -185,7 +185,7 @@ namespace Arith.Net
 
             service.InvokeAction(
                 "AddPortMapping",
-                new object[] { "", externalPort, protocol, endPoint.Port, endPoint.Address.ToString(), true, "", 0 });
+                new object[] { "", externalPort, protocol, endPoint.Port, endPoint.Address.ToString(), true, description, 0 });
 
             return mapper;
         }
