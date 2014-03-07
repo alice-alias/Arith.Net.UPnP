@@ -21,6 +21,11 @@ namespace Arith.Net
             return finder.FindByType(typeUri.ToString(), 0).Cast<UPnPDevice>().ToArray();
         }
 
+        public static object[] InvokeAction(this UPnPService service, string actionName)
+        {
+            return service.InvokeAction(actionName, new object[0]);
+        }
+
         public static object[] InvokeAction(this UPnPService service, string actionName, object[] actionArgs)
         {
             object obj = new object();
@@ -55,7 +60,7 @@ namespace Arith.Net
 
         public static UPnPService GetService(this UPnPDevice device, Uri serviceId)
         {
-            return device.GetServices()[serviceId];
+            return device.GetServices().FirstOrDefault(x => x.Key == serviceId).Value;
         }
 
         [Obsolete("GetDeviceUDNs(Uri) を使用してください。", true)]
@@ -88,9 +93,12 @@ namespace Arith.Net
     {
 
         public string Protocol { get; private set; }
-        public int InternalPort { get; private set; }
+        [Obsolete]
+        public int InternalPort { get { return EndPoint.Port; } }
         public int ExternalPort { get; private set; }
-        public IPAddress InternalClientAddress { get; private set; }
+        [Obsolete]
+        public IPAddress InternalClientAddress { get { return EndPoint.Address; } }
+        public IPEndPoint EndPoint { get; set; }
         
         UPnPService service;
 
@@ -157,28 +165,34 @@ namespace Arith.Net
             return Map(new Uri(devices.FirstOrDefault().UniqueDeviceName), protocol, internalPort, externalPort, clientAddress, description);
         }
 
-        public static PortMapper Map(Uri deviceUDN, string protocol, ushort internalPort, ushort externalPort, IPAddress clientAddress, string description)
+        public static PortMapper Map(Uri deviceUDN, string protocol, ushort externalPort, IPEndPoint endPoint, string description)
         {
+
             var device = UPnP.GetDevice(deviceUDN);
-            var service = device.Services["urn:upnp-org:serviceId:WANPPPConn1"];
+            
+            var service = device.GetService(new Uri("urn:upnp-org:serviceId:WANPPPConn1"));
             if (service == null)
-                service = device.Services["urn:upnp-org:serviceId:WANIPConn1"];
+                service = device.GetService(new Uri("urn:upnp-org:serviceId:WANIPConn1"));
 
             var mapper = new PortMapper()
             {
                 Protocol = protocol,
-                InternalPort = internalPort,
                 ExternalPort = externalPort,
-                InternalClientAddress = clientAddress,
+                EndPoint = endPoint,
 
                 service = service,
             };
 
             service.InvokeAction(
                 "AddPortMapping",
-                new object[] { "", externalPort, protocol, internalPort, clientAddress, true, "", 0 });
+                new object[] { "", externalPort, protocol, endPoint.Port, endPoint.Address.ToString(), true, "", 0 });
 
             return mapper;
+        }
+
+        public static PortMapper Map(Uri deviceUDN, string protocol, ushort internalPort, ushort externalPort, IPAddress clientAddress, string description)
+        {
+            return Map(deviceUDN, protocol, externalPort, new IPEndPoint(clientAddress, internalPort), description);
         }
 
         [Obsolete]
@@ -243,9 +257,9 @@ namespace Arith.Net
             {
                 Dispose(false);
             }
-            catch (WebException)
+            catch (Exception e)
             {
-                
+                System.Diagnostics.Debug.WriteLine(e.ToString());
             }
         }
     }
